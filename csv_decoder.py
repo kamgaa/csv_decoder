@@ -14,6 +14,7 @@ class CSVDecoderNode(Node):
         super().__init__('csv_decoder')
         self.cf01_pub = self.create_publisher(Pose, '/cf01/goal', 10)
         self.cf02_pub = self.create_publisher(Pose, '/cf02/goal', 10)
+        self.cf03_pub = self.create_publisher(Pose, '/cf03/goal', 10)
         
         self.trigger_sub = self.create_subscription(Int32, '/csv_trigger', self.trigger_callback, 10)
         self.timer = self.create_timer(0.1, self.timer_callback)  # 10Hz
@@ -24,12 +25,15 @@ class CSVDecoderNode(Node):
         # 좌표 기준점 및 스케일링
         self.cf01_index = -1
         self.cf02_index = -1
+        self.cf03_index = -1
 
         self.cf01_arrived = False
         self.cf02_arrived = False
+        self.cf03_arrived = False
 
         self.cf01_pose = None
         self.cf02_pose = None
+        self.cf03_pose = None
 
 
         # 기준점과 스케일 (SpaFrancorchamps.csv 용)
@@ -44,6 +48,7 @@ class CSVDecoderNode(Node):
         #csv_path = os.path.join(package_share, 'config', 'figure0.csv')
         lead_path = os.path.join(package_share, 'config', 'figure8_lead.csv')
         follower_path = os.path.join(package_share, 'config', 'figure8_foll.csv')
+        end_path = os.path.join(package_share, 'config', 'figure8_end.csv')
         #with open(csv_path, newline='', encoding='utf-8-sig') as csvfile:
         #    reader = csv.reader(csvfile)
         #    self.data = [(float(row[0]), float(row[1]),float(row[3])) for row in reader]
@@ -53,6 +58,11 @@ class CSVDecoderNode(Node):
         with open(follower_path, newline='', encoding='utf-8-sig') as f2:
             read_follower = csv.reader(f2)
             self.data_foll = [(float(row[0]), float(row[1]), float(row[3])) for row in read_follower]
+        with open(end_path, newline='', encoding='utf-8-sig') as f3:
+            read_end = csv.reader(f3)
+            self.data_foll = [(float(row[0]), float(row[1]), float(row[3])) for row in read_end]
+
+
 
     def trigger_callback(self, msg):
         if msg.data == 1111:
@@ -63,15 +73,26 @@ class CSVDecoderNode(Node):
             self.get_logger().info('cf02 triggered')
             self.cf02_index = 0
             
-            self.cf02_arrived = False    
+            self.cf02_arrived = False   
+
+        elif msg.data == 1110:
+            self.get_logger().info('cf03 triggered')
+            self.cf03_index = 0
+            
+            self.cf03_arrived = False    
+        
+ 
         
    
     def timer_callback(self):
         #elapsed = time.time() - self.start_time
         # cf01 도착 확인 및 index 초기화
-        if self.cf01_arrived and not self.cf02_arrived:
+        if self.cf01_arrived and not self.cf02_arrived and not self.cf03_arrived:
             self.get_logger().info('Leader arrived first, stopping follower')
             self.cf02_arrived = True      
+            self.get_logger().info('Leader arrived first, stopping end node')
+            self.cf03_arrived = True 
+        
         # cf01 퍼블리시
         if not self.cf01_arrived and self.cf01_index >= 0 and self.cf01_index < len(self.data_lead):
             x_raw, y_raw, yaw = self.data_lead[self.cf01_index]
@@ -97,6 +118,19 @@ class CSVDecoderNode(Node):
             self.cf02_index += 1
         elif not self.cf02_arrived and self.cf02_index >= 0 and self.cf02_index < len(self.data_foll): # follower 경로 끝에 도달
             self.cf02_arrived = True
+
+
+        if not self.cf03_arrived and self.cf03_index >= 0 and self.cf03_index < len(self.data_foll):
+            x_raw, y_raw, yaw = self.data_foll[self.cf03_index]
+            msg = Pose()
+            msg.position.x = x_raw 
+            msg.position.y = y_raw
+            msg.position.z = 1.0
+            msg.orientation.z = yaw
+            self.cf03_pub.publish(msg)
+            self.cf03_index += 1
+        elif not self.cf03_arrived and self.cf03_index >= 0 and self.cf03_index < len(self.data_foll): # follower 경로 끝에 도달
+            self.cf03_arrived = True
 
 
 
